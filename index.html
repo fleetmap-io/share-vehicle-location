@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Live Vehicle Location</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.19.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.19.0/mapbox-gl.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      height: 100dvh;
+      overflow: hidden;
+      background: #0f172a;
+    }
+
+    #map { position: absolute; inset: 0; }
+
+    /* ── Overlays ─────────────────────────────────────────────── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      gap: 14px;
+      padding: 32px;
+      text-align: center;
+      color: white;
+      background: rgba(15, 23, 42, 0.93);
+      backdrop-filter: blur(6px);
+    }
+
+    #loading .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    #loading p { color: rgba(255, 255, 255, 0.6); font-size: 0.9rem; }
+
+    #error { display: none; }
+
+    #error-icon { font-size: 2.5rem; line-height: 1; }
+
+    #error h2 { font-size: 1.15rem; font-weight: 700; color: #f87171; }
+
+    #error p { color: rgba(255, 255, 255, 0.6); font-size: 0.88rem; max-width: 320px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Info Panel ───────────────────────────────────────────── */
+    #panel {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      background: white;
+      border-radius: 18px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+      padding: 16px 18px 14px;
+      top: 16px;
+      left: 16px;
+      width: 272px;
+    }
+
+    @media (max-width: 600px) {
+      #panel { top: auto; left: 12px; right: 12px; bottom: 20px; width: auto; }
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 14px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.18); }
+    .status-dot.offline { background: #ef4444; }
+    .status-dot.unknown { background: #94a3b8; }
+
+    #device-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat { background: #f8fafc; border-radius: 11px; padding: 9px 11px; }
+
+    .stat-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 2px;
+    }
+
+    .stat-value { font-size: 1.05rem; font-weight: 700; color: #1e293b; line-height: 1.2; }
+
+    .stat-unit { font-size: 0.68rem; font-weight: 500; color: #64748b; margin-left: 1px; }
+
+    /* ── Panel Footer ─────────────────────────────────────────── */
+    #address-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: #f8fafc;
+      border-radius: 10px;
+    }
+
+    #address-row svg { flex-shrink: 0; margin-top: 1px; }
+
+    #address {
+      font-size: 0.75rem;
+      color: #475569;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .panel-footer {
+      margin-top: 8px;
+      text-align: right;
+    }
+
+    .footer-time {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+
+    /* ── Floating Buttons (center + style toggle) ─────────────── */
+    .map-btn {
+      display: none;
+      position: absolute;
+      right: 12px;
+      z-index: 10;
+      width: 44px;
+      height: 44px;
+      background: white;
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .map-btn:hover  { background: #f1f5f9; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+    .map-btn:active { background: #e2e8f0; }
+
+    #center-btn { bottom: 32px; }
+    #style-btn  { bottom: 84px; }
+
+    /* ── Vehicle Marker ───────────────────────────────────────── */
+    .marker-wrapper { width: 44px; height: 44px; }
+
+    .marker-inner {
+      width: 44px;
+      height: 44px;
+      transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .mapboxgl-ctrl-bottom-right { margin-bottom: 6px; margin-right: 6px; }
+    .mapboxgl-ctrl-top-right    { margin-top: 12px;  margin-right: 12px; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="loading" class="overlay">
+  <div class="spinner"></div>
+  <p data-i18n="loading"></p>
+</div>
+
+<div id="error" class="overlay">
+  <div id="error-icon">📡</div>
+  <h2 data-i18n="errorHeading"></h2>
+  <p id="error-msg"></p>
+</div>
+
+<div id="panel">
+  <div class="panel-header">
+    <div class="status-dot unknown" id="status-dot"></div>
+    <div id="device-name"></div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat">
+      <div class="stat-label" data-i18n="labelSpeed"></div>
+      <div class="stat-value"><span id="speed">—</span><span class="stat-unit">km/h</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label" data-i18n="labelAltitude"></div>
+      <div class="stat-value"><span id="altitude">—</span><span class="stat-unit">m</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label" data-i18n="labelHeading"></div>
+      <div class="stat-value" id="course">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label" data-i18n="labelIgnition"></div>
+      <div class="stat-value" id="ignition">—</div>
+    </div>
+  </div>
+  <div id="address-row">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+         stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+      <circle cx="12" cy="9" r="2.5"/>
+    </svg>
+    <span id="address">—</span>
+  </div>
+  <div class="panel-footer">
+    <div class="footer-time">
+      <span data-i18n="labelUpdated"></span>: <span id="last-update">—</span>
+    </div>
+  </div>
+</div>
+
+<button id="style-btn" class="map-btn" title="Satellite / Map">
+  <!-- image icon = switch to satellite; swapped to map icon when satellite is active -->
+  <svg id="style-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+       stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+</button>
+
+<button id="center-btn" class="map-btn" data-i18n-title="centerVehicle">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+       stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <line x1="12" y1="2"  x2="12" y2="6"/>
+    <line x1="12" y1="18" x2="12" y2="22"/>
+    <line x1="2"  y1="12" x2="6"  y2="12"/>
+    <line x1="18" y1="12" x2="22" y2="12"/>
+  </svg>
+</button>
+
+<script>
+  // ── Configuration ────────────────────────────────────────────────────────
+  const MAPBOX_TOKEN = 'pk.eyJ1IjoiamNhcmRlaXJhLWZsZWV0bWFwIiwiYSI6ImNtbTZ2dTQybzBrYWYyd3F5NnJoZ3d2ZjkifQ.iA7BAES0yjc006HVek1wwQ';
+  const MAP_STYLE    = 'mapbox://styles/mapbox/standard';
+  const serverUrl    = 'https://dash.frotaweb.com/traccar/api';
+
+  // ── Translations ─────────────────────────────────────────────────────────
+  const TRANSLATIONS = {
+    en: {
+      title:        'Live Vehicle Location',
+      loading:      'Loading vehicle location…',
+      errorHeading: 'Unable to load',
+      errorDefault: 'The share link may be invalid or has expired.',
+      errorNoToken: 'No share token in the URL. Please use a valid share link.',
+      errorInvalid: 'This share link is invalid or has expired.',
+      errorNoDevice:'No device is associated with this share link.',
+      errorFailed:  'Failed to load vehicle data. Please try again later.',
+      labelSpeed:    'Speed',
+      labelAltitude: 'Altitude',
+      labelHeading:  'Heading',
+      labelIgnition: 'Ignition',
+      labelUpdated:  'Updated',
+      centerVehicle: 'Center on vehicle',
+      ignitionOn:  'On',
+      ignitionOff: 'Off',
+      cardinals:   ['N','NE','E','SE','S','SW','W','NW'],
+    },
+    pt: {
+      title:        'Localização do Veículo',
+      loading:      'A carregar localização…',
+      errorHeading: 'Não foi possível carregar',
+      errorDefault: 'O link de partilha pode ser inválido ou ter expirado.',
+      errorNoToken: 'Sem token no URL. Por favor use um link de partilha válido.',
+      errorInvalid: 'Este link de partilha é inválido ou expirou.',
+      errorNoDevice:'Nenhum dispositivo associado a este link.',
+      errorFailed:  'Falha ao carregar os dados. Por favor tente novamente.',
+      labelSpeed:    'Velocidade',
+      labelAltitude: 'Altitude',
+      labelHeading:  'Direção',
+      labelIgnition: 'Ignição',
+      labelUpdated:  'Atualizado',
+      centerVehicle: 'Centrar no veículo',
+      ignitionOn:  'Ligada',
+      ignitionOff: 'Desligada',
+      cardinals:   ['N','NE','L','SE','S','SO','O','NO'],
+    },
+    es: {
+      title:        'Ubicación del Vehículo',
+      loading:      'Cargando ubicación…',
+      errorHeading: 'No se pudo cargar',
+      errorDefault: 'El enlace puede ser inválido o haber expirado.',
+      errorNoToken: 'Sin token en la URL. Use un enlace de compartir válido.',
+      errorInvalid: 'Este enlace es inválido o ha expirado.',
+      errorNoDevice:'Ningún dispositivo asociado a este enlace.',
+      errorFailed:  'Error al cargar los datos. Inténtelo de nuevo.',
+      labelSpeed:    'Velocidad',
+      labelAltitude: 'Altitud',
+      labelHeading:  'Rumbo',
+      labelIgnition: 'Encendido',
+      labelUpdated:  'Actualizado',
+      centerVehicle: 'Centrar en el vehículo',
+      ignitionOn:  'Encendido',
+      ignitionOff: 'Apagado',
+      cardinals:   ['N','NE','E','SE','S','SO','O','NO'],
+    },
+    fr: {
+      title:        'Localisation du Véhicule',
+      loading:      'Chargement de la position…',
+      errorHeading: 'Impossible de charger',
+      errorDefault: 'Le lien de partage est peut-être invalide ou expiré.',
+      errorNoToken: 'Aucun token dans l\'URL. Utilisez un lien valide.',
+      errorInvalid: 'Ce lien de partage est invalide ou a expiré.',
+      errorNoDevice:'Aucun appareil associé à ce lien.',
+      errorFailed:  'Échec du chargement. Veuillez réessayer plus tard.',
+      labelSpeed:    'Vitesse',
+      labelAltitude: 'Altitude',
+      labelHeading:  'Cap',
+      labelIgnition: 'Allumage',
+      labelUpdated:  'Mis à jour',
+      centerVehicle: 'Centrer sur le véhicule',
+      ignitionOn:  'Allumé',
+      ignitionOff: 'Éteint',
+      cardinals:   ['N','NE','E','SE','S','SO','O','NO'],
+    },
+  };
+
+  // ── Language detection ───────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('token');
+
+  function detectLang() {
+    const q = params.get('lang');
+    if (q && TRANSLATIONS[q]) return q;
+    for (const l of (navigator.languages || [navigator.language])) {
+      const code = l.split('-')[0].toLowerCase();
+      if (TRANSLATIONS[code]) return code;
+    }
+    return 'en';
+  }
+
+  let currentLang = detectLang();
+  let T = TRANSLATIONS[currentLang];
+
+  function setLang(lang) {
+    currentLang = lang;
+    T = TRANSLATIONS[lang];
+    document.documentElement.lang = lang;
+    document.title = T.title;
+    applyTranslations();
+    // Re-render dynamic values that use translated strings
+    if (currentPos) placeOrMoveMarker(currentPos);
+  }
+
+  function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      if (T[key] !== undefined) el.textContent = T[key];
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.dataset.i18nTitle;
+      if (T[key] !== undefined) el.title = T[key];
+    });
+  }
+
+  // ── Map init ─────────────────────────────────────────────────────────────
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+
+  const map = new mapboxgl.Map({
+    container: 'map',
+    style: MAP_STYLE,
+    center: [0, 20],
+    zoom: 2,
+    attributionControl: false,
+  });
+
+  map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
+  map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let marker         = null;
+  let markerInner    = null;
+  let followVehicle  = true;
+  let currentPos     = null;
+  let socket         = null;
+  let reconnectTimer = null;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function showError(msgKey) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display   = 'flex';
+    document.getElementById('error-msg').textContent = T[msgKey] || T.errorDefault;
+  }
+
+  function apiFetch(path) {
+    return fetch(`${serverUrl}${path}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+  }
+
+  function positionButtons() {
+    if (window.innerWidth > 600) {
+      document.getElementById('center-btn').style.bottom = '';
+      document.getElementById('style-btn').style.bottom  = '';
+      return;
+    }
+    const panelH = document.getElementById('panel').getBoundingClientRect().height;
+    const base   = panelH + 20 + 12; // panel bottom offset (20) + gap (12)
+    document.getElementById('center-btn').style.bottom = `${base}px`;
+    document.getElementById('style-btn').style.bottom  = `${base + 52}px`;
+  }
+
+  function showPanel() {
+    document.getElementById('loading').style.display    = 'none';
+    document.getElementById('panel').style.display      = 'block';
+    document.getElementById('center-btn').style.display = 'flex';
+    document.getElementById('style-btn').style.display  = 'flex';
+    positionButtons();
+  }
+
+  function knotsToKmh(knots) {
+    return Math.round((knots || 0) * 1.852);
+  }
+
+  function formatRelativeTime(isoString) {
+    if (!isoString) return '—';
+    return new Date(isoString).toLocaleString(currentLang, {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+  }
+
+  function courseLabel(deg) {
+    return T.cardinals[Math.round((deg % 360) / 45) % 8];
+  }
+
+  function mapWait() {
+    return new Promise(resolve => map.loaded() ? resolve() : map.once('load', resolve));
+  }
+
+  // ── Marker ───────────────────────────────────────────────────────────────
+  const ARROW_SVG = `
+    <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" width="44" height="44">
+      <defs>
+        <filter id="mshadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="rgba(0,0,0,0.22)"/>
+        </filter>
+      </defs>
+      <circle cx="22" cy="22" r="20" fill="white" stroke="#e2e8f0" stroke-width="1.5"
+              filter="url(#mshadow)"/>
+      <path d="M22 8 L29 34 L22 29 L15 34 Z" fill="#3b82f6"/>
+    </svg>`;
+
+  function buildMarkerElement() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'marker-wrapper';
+    const inner = document.createElement('div');
+    inner.className = 'marker-inner';
+    inner.innerHTML = ARROW_SVG;
+    wrapper.appendChild(inner);
+    return { wrapper, inner };
+  }
+
+  function placeOrMoveMarker(pos) {
+    const { longitude: lng, latitude: lat, course, speed, altitude, address, fixTime, deviceTime, attributes } = pos;
+    currentPos = pos;
+
+    if (!marker) {
+      const { wrapper, inner } = buildMarkerElement();
+      markerInner = inner;
+      marker = new mapboxgl.Marker({ element: wrapper, anchor: 'center' })
+        .setLngLat([lng, lat])
+        .addTo(map);
+    } else {
+      marker.setLngLat([lng, lat]);
+    }
+
+    markerInner.style.transform = `rotate(${course || 0}deg)`;
+
+    if (followVehicle) map.easeTo({ center: [lng, lat], duration: 900 });
+
+    document.getElementById('speed').textContent    = knotsToKmh(speed);
+    document.getElementById('altitude').textContent = Math.round(altitude || 0);
+    document.getElementById('course').textContent   =
+      course != null ? `${Math.round(course)}° ${courseLabel(course)}` : '—';
+
+    const ignition = attributes?.ignition;
+    document.getElementById('ignition').textContent =
+      ignition === true ? T.ignitionOn : ignition === false ? T.ignitionOff : '—';
+
+    document.getElementById('address').textContent = address || '—';
+    positionButtons();
+
+    document.getElementById('last-update').textContent = formatRelativeTime(fixTime || deviceTime);
+  }
+
+  function updateDevice(device) {
+    document.getElementById('device-name').textContent = device.name || '—';
+    document.getElementById('status-dot').className    = `status-dot ${device.status || 'unknown'}`;
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+  function connectSocket() {
+    if (socket) socket.close();
+    clearTimeout(reconnectTimer);
+
+    const wsUrl = serverUrl.replace(/^http/, 'ws') + `/socket?token=${encodeURIComponent(token)}`;
+    socket = new WebSocket(wsUrl);
+
+    socket.onmessage = ({ data }) => {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.positions?.length) placeOrMoveMarker(msg.positions[0]);
+        if (msg.devices?.length)   updateDevice(msg.devices[0]);
+      } catch { /* ignore malformed frames */ }
+    };
+
+    socket.onclose = () => { reconnectTimer = setTimeout(connectSocket, 5000); };
+  }
+
+  // Refresh relative timestamp every 30 s
+  setInterval(() => {
+    if (currentPos) {
+      document.getElementById('last-update').textContent =
+        formatRelativeTime(currentPos.fixTime || currentPos.deviceTime);
+    }
+  }, 30_000);
+
+  // ── Style toggle ──────────────────────────────────────────────────────────
+  const STYLES = {
+    standard:  'mapbox://styles/mapbox/standard',
+    satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+  };
+
+  // Shown when in satellite mode → click to return to street map (folded map icon)
+  const MAP_ICON = `<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+    <line x1="8" y1="2" x2="8" y2="18"/>
+    <line x1="16" y1="6" x2="16" y2="22"/>`;
+
+  // Shown when in street mode → click to switch to satellite (aerial image icon)
+  const SAT_ICON = `<rect x="3" y="3" width="18" height="18" rx="2"/>
+    <circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>`;
+
+  let isSatellite = false;
+
+  document.getElementById('style-btn').addEventListener('click', () => {
+    isSatellite = !isSatellite;
+    map.setStyle(isSatellite ? STYLES.satellite : STYLES.standard);
+    document.getElementById('style-icon').innerHTML = isSatellite ? MAP_ICON : SAT_ICON;
+  });
+
+  // ── Center button ─────────────────────────────────────────────────────────
+  document.getElementById('center-btn').addEventListener('click', () => {
+    if (!currentPos) return;
+    followVehicle = true;
+    map.flyTo({ center: [currentPos.longitude, currentPos.latitude], zoom: 15, duration: 1200 });
+  });
+
+  map.on('dragstart', () => { followVehicle = false; });
+
+  window.addEventListener('resize', positionButtons);
+
+  // ── Main flow ─────────────────────────────────────────────────────────────
+  async function init() {
+    // Apply initial translations before any async work
+    setLang(currentLang);
+
+    if (!token) { showError('errorNoToken'); return; }
+
+    try {
+      const devicesRes = await apiFetch('/devices');
+      if (devicesRes.status === 401) { showError('errorInvalid'); return; }
+      if (!devicesRes.ok) throw new Error('devices fetch failed');
+      const devices = await devicesRes.json();
+
+      if (!devices.length) { showError('errorNoDevice'); return; }
+
+      const device = devices[0];
+      updateDevice(device);
+
+      const posRes = await apiFetch('/positions');
+      if (!posRes.ok) throw new Error('positions fetch failed');
+      const positions = await posRes.json();
+
+      await mapWait();
+
+      if (positions.length) {
+        const pos = positions.find(p => p.deviceId === device.id) ?? positions[0];
+        placeOrMoveMarker(pos);
+        map.flyTo({ center: [pos.longitude, pos.latitude], zoom: 15, duration: 1500 });
+      }
+
+      showPanel();
+      connectSocket();
+
+    } catch (err) {
+      console.error(err);
+      showError('errorFailed');
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
