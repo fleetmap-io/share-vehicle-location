@@ -261,6 +261,9 @@
     <div class="footer-time">
       <span data-i18n="labelUpdated"></span>: <span id="last-update">—</span>
     </div>
+    <div class="footer-time" id="expires-row" style="display:none">
+      <span data-i18n="labelExpires"></span>: <span id="link-expires">—</span>
+    </div>
   </div>
 </div>
 
@@ -307,6 +310,7 @@
       labelHeading:  'Heading',
       labelIgnition: 'Ignition',
       labelUpdated:  'Updated',
+      labelExpires:  'Link expires',
       centerVehicle: 'Center on vehicle',
       ignitionOn:  'On',
       ignitionOff: 'Off',
@@ -326,6 +330,7 @@
       labelHeading:  'Direção',
       labelIgnition: 'Ignição',
       labelUpdated:  'Atualizado',
+      labelExpires:  'Link expira',
       centerVehicle: 'Centrar no veículo',
       ignitionOn:  'Ligada',
       ignitionOff: 'Desligada',
@@ -345,6 +350,7 @@
       labelHeading:  'Rumbo',
       labelIgnition: 'Encendido',
       labelUpdated:  'Actualizado',
+      labelExpires:  'Enlace expira',
       centerVehicle: 'Centrar en el vehículo',
       ignitionOn:  'Encendido',
       ignitionOff: 'Apagado',
@@ -364,6 +370,7 @@
       labelHeading:  'Cap',
       labelIgnition: 'Allumage',
       labelUpdated:  'Mis à jour',
+      labelExpires:  'Lien expire',
       centerVehicle: 'Centrer sur le véhicule',
       ignitionOn:  'Allumé',
       ignitionOff: 'Éteint',
@@ -656,6 +663,16 @@
       if (devicesRes.status === 401) { showError('errorInvalid'); return; }
       if (!devicesRes.ok) throw new Error('devices fetch failed');
       const devices = await devicesRes.json();
+
+      const expiration = params.get('expiration');
+      if (expiration) {
+        document.getElementById('link-expires').textContent =
+          new Date(expiration).toLocaleString(currentLang, {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        document.getElementById('expires-row').style.display = '';
+      }
 
       if (!devices.length) { showError('errorNoDevice'); return; }
 
