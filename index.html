@@ -290,9 +290,11 @@
 
 <script>
   // ── Configuration ────────────────────────────────────────────────────────
+  const VERSION      = '1.1.0';
+  console.log(`share-vehicle-location v${VERSION}`);
   const MAPBOX_TOKEN = 'pk.eyJ1IjoiamNhcmRlaXJhLWZsZWV0bWFwIiwiYSI6ImNtbTZ2dTQybzBrYWYyd3F5NnJoZ3d2ZjkifQ.iA7BAES0yjc006HVek1wwQ';
   const MAP_STYLE    = 'mapbox://styles/mapbox/standard';
-  const serverUrl    = 'https://traccar.jsrastreamento.com/api';
+  const serverUrl    = new URLSearchParams(window.location.search).get('serverUrl') || 'https://traccar.jsrastreamento.com/api';
 
   // ── Translations ─────────────────────────────────────────────────────────
   const TRANSLATIONS = {
